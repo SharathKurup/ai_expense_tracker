@@ -1,0 +1,5 @@
+pdfplumber
+pymongo
+python-dotenv
+pandas
+ollama
