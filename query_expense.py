@@ -6,7 +6,6 @@ import ollama
 import pandas as pd
 from datetime import datetime
 
-from sympy import Dict
 
 load_dotenv()
 MONGODB_URI = os.getenv("MONGODB_URI")

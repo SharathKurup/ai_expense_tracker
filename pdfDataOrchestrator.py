@@ -36,8 +36,11 @@ FOODS_DRINKS = os.getenv("FOODS_DRINKS")
 ENTERTAINMENT = os.getenv("ENTERTAINMENT")
 MONGODB_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME")
+ENV = os.getenv("ENV")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 PERSONAL_TYPE = os.getenv("PERSONAL_TYPE")
+EDUCATION = os.getenv("EDUCATION")
+SPECIAL_EMI = os.getenv("ONCHIYAM_IDBI_EMI")
 #endregion
 
 #region clean Configuration
@@ -59,6 +62,8 @@ RECURRING_PAYMENTS_LIST = [x.strip().upper() for x in (RECURRING_PAYMENTS or "")
 FOODS_DRINKS_LIST = [x.strip().upper() for x in (FOODS_DRINKS or "").split(",") if x.strip()]
 ENTERTAINMENT_LIST = [x.strip().upper() for x in (ENTERTAINMENT or "").split(",") if x.strip()]
 PERSONAL_TYPE_LIST = [x.strip().upper() for x in (PERSONAL_TYPE or "").split(",") if x.strip()]
+EDUCATION_LIST = [x.strip().upper() for x in (EDUCATION or "").split(",") if x.strip()]
+SPECIAL_EMI_LIST = [x.strip().upper() for x in (SPECIAL_EMI or "").split(",") if x.strip()]
 #endregion
 
 def process_all_statements() -> Dict[str, Any]:
@@ -121,6 +126,7 @@ def process_single_statement(pdf_path: Path, output_dir: str) -> Dict[str, Any]:
 def process_transaction_row(row: List[str], doc_id: str) -> Optional[Dict[str, Any]]:
     try:
         # Clean and convert date
+        # print(f"Processing row: {row}")
         date_str = row[0].strip()
         # Skip rows where the first column is not a valid date
         try:
@@ -166,6 +172,7 @@ def process_transaction_row(row: List[str], doc_id: str) -> Optional[Dict[str, A
         }
     except Exception as e:
         print(f"Error processing transaction row: {str(e)}")
+        print(f"ROW: {row}")
         
     return transaction
 
@@ -212,7 +219,7 @@ def extract_bank_details(description: str) -> Optional[Dict[str, str]]:
             transaction_id = upi_parts[2] if len(upi_parts) > 2 else ""
             recepient_name = upi_parts[3] if len(upi_parts) > 3 else ""
             recipient_type = "PERSONAL" if any(x in recepient_name.upper() for x in PERSONAL_TYPE_LIST) else getRecipientType(target_identifier)
-            bank_name = upi_parts[5] if len(upi_parts) > 4 else ""
+            bank_name = upi_parts[5] if len(upi_parts) > 5 else ""
 
             return {
                 "source": source,
@@ -338,9 +345,9 @@ def categorize_transaction(description: str)-> str:
     # print(f"Categorizing transaction: {description}")
     description=description.upper()
     # check for PERSONAL_TYPE_LIST first 
-    if any(x in description for x in PERSONAL_TYPE_LIST):
-        return "PERSONAL"
-    elif any(x in description for x in FOOD_DELIVERY_LIST):
+    # if any(x in description for x in PERSONAL_TYPE_LIST):
+    #     return "PERSONAL"
+    if any(x in description for x in FOOD_DELIVERY_LIST):
         return "FOOD_DELIVERY"
     elif any(x in description for x in GROCERY_LIST):
         return "GROCERY"
@@ -362,7 +369,7 @@ def categorize_transaction(description: str)-> str:
         return "SALARY"
     elif any (x in description for x in CARRIER_LIST):
         return "RECHARGE"
-    elif any (x in description for x in EMI_LIST):
+    elif any(description.startswith(x) for x in EMI_LIST) or any(x in description for x in SPECIAL_EMI_LIST):
         return "LOAN_PAYMENT"
     elif any (x in description for x in CREDIT_CARD_PAYMENT_LIST):
         return "CREDIT_CARD_PAYMENT"
@@ -374,6 +381,10 @@ def categorize_transaction(description: str)-> str:
         return "FOODS_DRINKS"
     elif any (x in description for x in ENTERTAINMENT_LIST):
         return "ENTERTAINMENT"
+    elif any (x in description for x in EDUCATION_LIST):
+        return "EDUCATION"
+    if any(x in description for x in PERSONAL_TYPE_LIST):
+        return "PERSONAL"
     else:
         return "OTHER"
 
@@ -393,10 +404,16 @@ def is_recurrring_payment(description: str) -> bool:
         return True
     return False
 
+def get_effective_collection_name() -> str:
+    base = COLLECTION_NAME
+    if (ENV or "").strip().lower() == "dev":
+        return f"{base}_dev"
+    return base
+
 def insert_transactions_to_db(transactions: List[Dict[str, Any]]):
     client = MongoClient(MONGODB_URI)  # Update with your MongoDB URI
     db = client[DB_NAME]  # Database name
-    collection = db[COLLECTION_NAME]  # Collection name
+    collection = db[get_effective_collection_name()]  # Collection name
     if transactions:
         collection.insert_many(transactions)  # Insert all transactions
     client.close()

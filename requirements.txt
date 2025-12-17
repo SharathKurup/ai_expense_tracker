@@ -3,3 +3,6 @@ pymongo
 python-dotenv
 pandas
 ollama
+pikepdf
+requests
+msal
