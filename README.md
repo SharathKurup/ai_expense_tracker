@@ -1,8 +1,8 @@
----
 > **Note:** `query_expense.py` is a work in progress and its results may not be fully reliable. Use with discretion and verify outputs as needed.
 
-# AI Expense Tracker
+---
 
+# AI Expense Tracker
 
 A modular pipeline for extracting, storing, and analyzing personal financial transactions using bank statement PDFs, MongoDB, and LLMs.
 

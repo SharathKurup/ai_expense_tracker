@@ -40,7 +40,7 @@ ENV = os.getenv("ENV")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 PERSONAL_TYPE = os.getenv("PERSONAL_TYPE")
 EDUCATION = os.getenv("EDUCATION")
-SPECIAL_EMI = os.getenv("ONCHIYAM_IDBI_EMI")
+SPECIAL_EMI = os.getenv("SPECIAL_EMI")
 #endregion
 
 #region clean Configuration
