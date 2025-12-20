@@ -42,7 +42,13 @@ if cache.has_state_changed:
 headers = {"Authorization": f"Bearer {result['access_token']}"}
 
 # ---------- Step 1: Fetch all messages from sender with attachments ----------
-messages_url = f"https://graph.microsoft.com/v1.0/me/messages?$filter=from/emailAddress/address eq '{SENDER_EMAIL}' and hasAttachments eq true&$select=id,subject,receivedDateTime&$top=50"
+# Add subject filter: only messages with subject "AXIS BANK : Statement"
+messages_url = (
+    f"https://graph.microsoft.com/v1.0/me/messages?$filter=from/emailAddress/address eq '{SENDER_EMAIL}' "
+    f"and hasAttachments eq true "
+    f"and contains(subject,'Statement') "
+    f"&$select=id,subject,receivedDateTime&$top=50"
+)
 
 all_messages = []
 url = messages_url

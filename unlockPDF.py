@@ -1,4 +1,3 @@
-
 import pikepdf
 from pathlib import Path
 import re
