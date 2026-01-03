@@ -8,8 +8,8 @@ from ORG.pdfDataOrchestrator import process_single_statement
 
 load_dotenv()
 
-INPUT_DIR = Path(os.getenv("INPUT_DIR", "attachments/locked"))
-OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "attachments/unlocked"))
+INPUT_DIR = Path(os.getenv("INPUT_DIR", "../attachments/locked"))
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "../attachments/unlocked"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PASSWORDS = os.getenv("PDF_PASSWORDS", "").split(",")
 
@@ -106,7 +106,7 @@ def normalize_filename_old(bank_name, pdf_path: Path) -> str:
     return pdf_path.name
     # raise ValueError(f"Cannot normalize filename: {pdf_path.name}")
 
-def main(bank_name):
+def main():
 
     normalized_status = []
 
@@ -114,10 +114,8 @@ def main(bank_name):
         print(f"Processing file: {pdf_file.name}")
         pdf = None
 
-        if not bank_name:
-            _tmpFileName = pdf_file.name.split("_")
-            bank_name = _tmpFileName[0]
-
+        _tmpFileName = pdf_file.name.split("_")
+        bank_name = _tmpFileName[0]
 
         for pwd in PASSWORDS:
             try:
@@ -153,5 +151,4 @@ def main(bank_name):
     print("Processing completed.")
 
 if __name__ == "__main__":
-    banker=""
-    main(banker)
+    main()

@@ -8,6 +8,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.auth.exceptions import RefreshError  # added to catch expired/revoked tokens
 
 # Load environment variables
 load_dotenv()
@@ -17,7 +18,7 @@ CLIENT_ID = os.getenv("CLIENT_ID")
 AUTHORITY = os.getenv("AUTHORITY")
 SCOPES = os.getenv("SCOPES", "Mail.Read,User.Read").split(",")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL").split(",")
-DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "attachments/locked")
+DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "../attachments/locked")
 
 GMAIL_CREDENTIALS = os.getenv("GMAIL_CREDENTIALS")
 GMAIL_TOKEN = os.getenv("GMAIL_TOKEN")
@@ -33,7 +34,7 @@ bank3 = os.getenv("bank3")
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# ---------- Token Cache & Auth (Graph) ----------
+# ---------- Token Cache & Auth (Graph / Outlook) ----------
 cache = msal.SerializableTokenCache()
 if os.path.exists(CACHE_FILE):
     cache.deserialize(open(CACHE_FILE, "r").read())
@@ -59,7 +60,8 @@ def _save_bytes_to_file(banker, filename, content_bytes):
     print(f"Saved: {filepath}")
     return True
 
-# --- Graph helpers ---
+# --- OUTLOOK / MICROSOFT GRAPH (Outlook) helpers ---
+# These functions use Microsoft Graph (Outlook) APIs to list messages and download attachments.
 def _get_graph_headers():
     accounts = app.get_accounts()
     if accounts:
@@ -126,8 +128,8 @@ def download_attachments_graph(banker, messages, headers=None):
                 content_bytes = base64.b64decode(attach['contentBytes'])
                 _save_bytes_to_file(banker, filename, content_bytes)
 
-# --- Gmail helpers ---
-
+# --- GMAIL / GOOGLE MAIL helpers ---
+# These functions use the Gmail API to authenticate, list messages and download attachments.
 def get_gmail_service():
 
     creds = None
@@ -135,10 +137,22 @@ def get_gmail_service():
         creds = Credentials.from_authorized_user_file(GMAIL_TOKEN, GMAIL_SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                # Token is expired or revoked. Remove token file and force new auth flow.
+                print("Gmail token expired or revoked. Removing local token and re-running auth flow.")
+                try:
+                    os.remove(GMAIL_TOKEN)
+                except Exception:
+                    pass
+                creds = None
+        if not creds:
+            # run interactive flow to obtain new credentials
             flow = InstalledAppFlow.from_client_secrets_file(GMAIL_CREDENTIALS, GMAIL_SCOPES)
             creds = flow.run_local_server(port=0)
+
+        # Save the credentials for the next run
         with open(GMAIL_TOKEN, "w") as token:
             token.write(creds.to_json())
 
@@ -191,19 +205,24 @@ def download_attachments_gmail(banker, service, messages):
                 _save_bytes_to_file(banker, filename, file_bytes)
 
 # ---------- Orchestration based on MAIL_PROVIDER ----------
-
 def main():
     print(f"Downloading for : {BANK_NAME}")
+    # Outlook (Microsoft Graph) for bank1
     if BANK_NAME in (bank1, "all"):
+        # Provider: Outlook / Microsoft Graph
         graph_messages = fetch_messages_graph(SENDER_EMAIL[0], SUBJECT_QUERY[0])
         download_attachments_graph(bank1, graph_messages)
 
+    # Gmail for bank2
     if BANK_NAME in (bank2, "all"):
+        # Provider: Gmail
         service = get_gmail_service()
         gmail_messages = fetch_messages_gmail(service, SENDER_EMAIL[1], SUBJECT_QUERY[1])
         download_attachments_gmail(bank2, service, gmail_messages)
 
+    # Outlook (Microsoft Graph) for bank3
     if BANK_NAME in (bank3, "all"):
+        # Provider: Outlook / Microsoft Graph
         graph_messages = fetch_messages_graph(SENDER_EMAIL[2], SUBJECT_QUERY[2])
         download_attachments_graph(bank3, graph_messages)
 

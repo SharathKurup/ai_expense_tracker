@@ -1,78 +1,31 @@
 #region Imports
 import pdfplumber
-import json
 import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 import re
 from pathlib import Path
-from dotenv import load_dotenv
-from pymongo import MongoClient
+from src import bank_structure,header_detection,mongo as db,env
 #endregion
 
 #todo:: Move categorization lists to DB collection for easier management and updates.
-#region Configuration
-load_dotenv()
-INPUT_PDF_DIR = os.getenv("INPUT_PDF_DIR") # Folder containing PDF statements
-OUTPUT_JSON_DIR = os.getenv("OUTPUT_JSON_DIR") # Folder for JSON outputs
-COMBINED_FILE = os.getenv("COMBINED_FILE") # Combined transactions file
-DATE_FORMAT = os.getenv("DATE_FORMAT")  # Expected date format in PDFs
-CARRIER_LIST = os.getenv("CARRIER_LIST")
-FOOD_DELIVERY = os.getenv("FOOD_DELIVERY")
-SHOPPING = os.getenv("SHOPPING")
-TRANSPORT = os.getenv("TRANSPORT")
-GROCERY = os.getenv("GROCERY")
-HEALTHCARE = os.getenv("HEALTHCARE")
-RESTAURANTS = os.getenv("RESTAURANTS")
-FRUITS_VEGETABLES_FISH = os.getenv("FRUITS_VEGETABLES_FISH")
-INTEREST_INCOME = os.getenv("INTEREST_INCOME")
-RENT= os.getenv("RENT")
-EMI_LIST = os.getenv("EMI_LIST")
-CREDIT_CARD_PAYMENT = os.getenv("CREDIT_CARD_PAYMENT")
-SUBSCRIPTION_SERVICES = os.getenv("SUBSCRIPTION_SERVICES")
-UTILITY_BILLS = os.getenv("UTILITY_BILLS")
-RECURRING_PAYMENTS = os.getenv("RECURRING_PAYMENTS")
-FOODS_DRINKS = os.getenv("FOODS_DRINKS")
-ENTERTAINMENT = os.getenv("ENTERTAINMENT")
-MONGODB_URI = os.getenv("MONGODB_URI")
-DB_NAME = os.getenv("DB_NAME")
-ENV = os.getenv("ENV")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME")
-PERSONAL_TYPE = os.getenv("PERSONAL_TYPE")
-EDUCATION = os.getenv("EDUCATION")
-SPECIAL_EMI = os.getenv("SPECIAL_EMI")
-#endregion
 
-#region clean Configuration
-CARRIER_LIST = [x.strip().upper() for x in (CARRIER_LIST or "").split(",") if x.strip()]
-FOOD_DELIVERY_LIST = [x.strip().upper() for x in (FOOD_DELIVERY or "").split(",") if x.strip()]
-SHOPPING_LIST = [x.strip().upper() for x in (SHOPPING or "").split(",") if x.strip()]
-TRANSPORT_LIST = [x.strip().upper() for x in (TRANSPORT or "").split(",") if x.strip()]
-GROCERY_LIST = [x.strip().upper() for x in (GROCERY or "").split(",") if x.strip()]
-HEALTHCARE_LIST = [x.strip().upper() for x in (HEALTHCARE or "").split(",") if x.strip()]
-RESTAURANTS_LIST = [x.strip().upper() for x in (RESTAURANTS or "").split(",") if x.strip()]
-FRUITS_VEGETABLES_FISH_LIST = [x.strip().upper() for x in (FRUITS_VEGETABLES_FISH or "").split(",") if x.strip()]
-INTEREST_INCOME_LIST = [x.strip().upper() for x in (INTEREST_INCOME or "").split(",") if x.strip()]
-RENT_LIST = [x.strip().upper() for x in (RENT or "").split(",") if x.strip()]
-EMI_LIST = [x.strip().upper() for x in (EMI_LIST or "").split(",") if x.strip()]
-CREDIT_CARD_PAYMENT_LIST = [x.strip().upper() for x in (CREDIT_CARD_PAYMENT or "").split(",") if x.strip()]
-SUBSCRIPTION_SERVICES_LIST = [x.strip().upper() for x in (SUBSCRIPTION_SERVICES or "").split(",") if x.strip()]
-UTILITY_BILLS_LIST = [x.strip().upper() for x in (UTILITY_BILLS or "").split(",") if x.strip()]
-RECURRING_PAYMENTS_LIST = [x.strip().upper() for x in (RECURRING_PAYMENTS or "").split(",") if x.strip()]
-FOODS_DRINKS_LIST = [x.strip().upper() for x in (FOODS_DRINKS or "").split(",") if x.strip()]
-ENTERTAINMENT_LIST = [x.strip().upper() for x in (ENTERTAINMENT or "").split(",") if x.strip()]
-PERSONAL_TYPE_LIST = [x.strip().upper() for x in (PERSONAL_TYPE or "").split(",") if x.strip()]
-EDUCATION_LIST = [x.strip().upper() for x in (EDUCATION or "").split(",") if x.strip()]
-SPECIAL_EMI_LIST = [x.strip().upper() for x in (SPECIAL_EMI or "").split(",") if x.strip()]
-#endregion
+# add enum with date, description, debit, credit, balance
+# class TransactionField(Enum):
+#     DATE = "date"
+#     DESCRIPTION = "description"
+#     DEBIT = "debit"
+#     CREDIT = "credit"
+#     BALANCE = "balance"
+#get bank column structure from JSON
 
 def process_all_statements() -> Dict[str, Any]:
     print("Processing all PDF statements...")
 
-    Path(OUTPUT_JSON_DIR).mkdir(exist_ok=True)
-    monthly_output_dir=os.path.join(OUTPUT_JSON_DIR, "monthly")
+    Path(env.OUTPUT_JSON_DIR).mkdir(exist_ok=True)
+    monthly_output_dir=os.path.join(env.OUTPUT_JSON_DIR, "monthly")
     Path(monthly_output_dir).mkdir(parents=True, exist_ok=True) # parents=True -> will create all parent directories if they do not exist
-    
+
     all_transactions = []
     processing_stats={
         "total_files": 0,
@@ -80,10 +33,10 @@ def process_all_statements() -> Dict[str, Any]:
         "failed_files": 0,
         "total_transactions": 0
     }
-    for pdf_file in Path(INPUT_PDF_DIR).glob("*.pdf"):
+    for pdf_file in Path(env.INPUT_PDF_DIR).glob("*.pdf"):
         try:
             transactions = process_single_statement(pdf_file, monthly_output_dir)
-            insert_transactions_to_db(transactions)  # Insert transactions into MongoDB
+            db.insert_transactions_to_db(transactions)  # Insert transactions into MongoDB
         except Exception as e:
             print(f"Failed to process {pdf_file.name}: {str(e)}")
             continue
@@ -95,8 +48,9 @@ def process_single_statement(pdf_path: Path, output_dir: str) -> Dict[str, Any]:
     
     with pdfplumber.open(pdf_path) as pdf:
 
-        bank_name = get_bank_name(pdf)
-
+        bank_name = get_bank_name(doc_id.split("_")[0]) # send only bank name part to get_bank_name function
+        bank_schema=bank_structure.get_bank_columns(bank_name.split(" ")[0].upper())
+        column_map=None
         for page in pdf.pages:
             try:
                 tables = page.extract_tables()
@@ -104,12 +58,25 @@ def process_single_statement(pdf_path: Path, output_dir: str) -> Dict[str, Any]:
                     continue
                 
                 for table in tables:
-                    for row in table:
+                     for row in table:
                         try:
-                            if not row or len(row) < 6 or not row[0] or "Tran Date" in row[0]: # Skip header rows or empty rows
+                            if not row or all(not col or not col.strip() for col in row):
                                 continue
-                            
-                            transaction = process_transaction_row(row, doc_id)
+
+                            if column_map is None:
+                                tmp_column_map=header_detection.detect_column_map(row,bank_schema)
+
+                                if "date" in tmp_column_map and "description" in tmp_column_map:
+                                    column_map=tmp_column_map
+                                    print(f"{column_map}")
+                                    continue  # Skip header row after mapping columns
+                                else:
+                                    continue
+                            # for testing purpose, remove later
+                            # continue
+
+                            # if datetime.strptime(row[column_map["date"]], "%d-%m-%Y"):#check for valid row
+                            transaction = process_transaction_row(row, doc_id, column_map)
                             if transaction:
                                 transaction={"bank_name": bank_name, **transaction} # Add bank name to transaction at the beginning
                                 transactions.append(transaction)
@@ -123,17 +90,25 @@ def process_single_statement(pdf_path: Path, output_dir: str) -> Dict[str, Any]:
     # print(f"{json.dumps(transactions, indent=2)}")
     return transactions
 
-def process_transaction_row(row: List[str], doc_id: str) -> Optional[Dict[str, Any]]:
+def process_transaction_row(row: List[str], doc_id: str,col_map) -> Optional[Dict[str, Any]]:
+    transaction=None
     try:
         # Clean and convert date
         # print(f"Processing row: {row}")
-        date_str = row[0].strip()
+        date_str = row[col_map["date"]].strip()
+        date_obj = None
         # Skip rows where the first column is not a valid date
-        try:
-            date_obj = datetime.strptime(date_str, DATE_FORMAT)
-        except ValueError:
-            return None  # Not a valid date, skip this row
-        
+        for fmt in env.DATE_FORMAT_LIST:
+            try:
+                date_obj = datetime.strptime(date_str, fmt)
+                break
+            except ValueError:
+                continue
+        # date_obj = datetime.strptime(date_str, DATE_FORMAT)
+
+        if not date_obj:
+            return None
+
         formatted_date=date_obj.strftime("%Y-%m-%d")
         day_of_week = date_obj.strftime("%A")
         is_weekend = day_of_week in ['Saturday', 'Sunday']
@@ -141,12 +116,12 @@ def process_transaction_row(row: List[str], doc_id: str) -> Optional[Dict[str, A
         # month_year = date_obj.strftime("%m/%Y")
         quarter = f"Q{(int(formatted_date[5:7]) - 1) // 3 + 1}"
 
-        raw_description = row[2] if len(row) > 2 else ""
+        raw_description = row[col_map["description"]] if len(row) > 2 else ""
         description = raw_description.strip().replace("\n", " ")
 
-        debit = float(row[3].strip().replace(",", "")) if row[3]  else 0.0
-        credit = float(row[4].strip().replace(",", "")) if row[4]  else 0.0
-        balance = float(row[5].strip().replace(",", "")) if row[5]  else 0.0
+        debit = float(row[col_map["debit"]].strip().replace(",", "")) if row[col_map["debit"]] else 0.0
+        credit = float(row[col_map["credit"]].strip().replace(",", "")) if row[col_map["credit"]] else 0.0
+        balance = float(row[col_map["balance"]].strip().replace(",", "")) if row[col_map["balance"]] else 0.0
               
         metadata=extract_comprehensive_metadata(
             description=description,
@@ -191,7 +166,7 @@ def extract_comprehensive_metadata(
     is_debit = debit > 0
     is_credit = credit > 0
     amount_range = categorize_amount_range(debit if is_debit else credit)
-    is_recurrring = is_recurrring_payment(description_upper)
+    is_recurring = is_recurring_payment(description_upper)
     metadata = {
         "payment_method": payment_method,
         "transaction_category": transaction_category,
@@ -201,7 +176,7 @@ def extract_comprehensive_metadata(
         "day_of_week": day_of_week,
         "is_weekend": is_weekend,
         "amount_range": amount_range,
-        "is_recurrring": is_recurrring,
+        "is_recurring": is_recurring,
         "recipient_bank_details": bank_details,
     }
     return metadata
@@ -218,7 +193,7 @@ def extract_bank_details(description: str) -> Optional[Dict[str, str]]:
             
             transaction_id = upi_parts[2] if len(upi_parts) > 2 else ""
             recepient_name = upi_parts[3] if len(upi_parts) > 3 else ""
-            recipient_type = "PERSONAL" if any(x in recepient_name.upper() for x in PERSONAL_TYPE_LIST) else getRecipientType(target_identifier)
+            recipient_type = "PERSONAL" if any(x in recepient_name.upper() for x in env.PERSONAL_TYPE_LIST) else getRecipientType(target_identifier)
             bank_name = upi_parts[5] if len(upi_parts) > 5 else ""
 
             return {
@@ -289,7 +264,7 @@ def extract_bank_details(description: str) -> Optional[Dict[str, str]]:
     return None
 
 def getRecipientType(target_identifier):
-    if target_identifier.startswith("P2P") or any(x in target_identifier for x in PERSONAL_TYPE_LIST): # P2P - person to person
+    if target_identifier.startswith("P2P") or any(x in target_identifier for x in env.PERSONAL_TYPE_LIST): # P2P - person to person
         recipient_type = "PERSONAL"
     elif target_identifier.startswith(("P2M", "P2A")): # P2A- person to account, P2M - person to merchant
         recipient_type = "MERCHANT"
@@ -347,43 +322,43 @@ def categorize_transaction(description: str)-> str:
     # check for PERSONAL_TYPE_LIST first 
     # if any(x in description for x in PERSONAL_TYPE_LIST):
     #     return "PERSONAL"
-    if any(x in description for x in FOOD_DELIVERY_LIST):
+    if any(x in description for x in env.FOOD_DELIVERY_LIST):
         return "FOOD_DELIVERY"
-    elif any(x in description for x in GROCERY_LIST):
+    elif any(x in description for x in env.GROCERY_LIST):
         return "GROCERY"
-    elif any(x in description for x in SHOPPING_LIST):
+    elif any(x in description for x in env.SHOPPING_LIST):
         return "SHOPPING"
-    elif any(x in description for x in TRANSPORT_LIST):
+    elif any(x in description for x in env.TRANSPORT_LIST):
         return "TRANSPORT"
-    elif any(x in description for x in HEALTHCARE_LIST):
+    elif any(x in description for x in env.HEALTHCARE_LIST):
         return "HEALTHCARE"
-    elif any(x in description for x in RESTAURANTS_LIST):
+    elif any(x in description for x in env.RESTAURANTS_LIST):
         return "RESTAURANTS"
-    elif any(x in description for x in FRUITS_VEGETABLES_FISH_LIST):
+    elif any(x in description for x in env.FRUITS_VEGETABLES_FISH_LIST):
         return "FRUITS_VEGETABLES"
-    elif any(x in description for x in INTEREST_INCOME_LIST):
+    elif any(x in description for x in env.INTEREST_INCOME_LIST):
         return "INTEREST_INCOME"
-    elif any (x in description for x in RENT_LIST):
+    elif any (x in description for x in env.RENT_LIST):
         return "RENT"
     elif any (x in description for x in ['SALARY']):
         return "SALARY"
-    elif any (x in description for x in CARRIER_LIST):
+    elif any (x in description for x in env.CARRIER_LIST):
         return "RECHARGE"
-    elif any(description.startswith(x) for x in EMI_LIST) or any(x in description for x in SPECIAL_EMI_LIST):
+    elif any(description.startswith(x) for x in env.EMI_LIST) or any(x in description for x in env.SPECIAL_EMI_LIST):
         return "LOAN_PAYMENT"
-    elif any (x in description for x in CREDIT_CARD_PAYMENT_LIST):
+    elif any (x in description for x in env.CREDIT_CARD_PAYMENT_LIST):
         return "CREDIT_CARD_PAYMENT"
-    elif any (x in description for x in SUBSCRIPTION_SERVICES_LIST):
+    elif any (x in description for x in env.SUBSCRIPTION_SERVICES_LIST):
         return "SUBSCRIPTION_SERVICES"
-    elif any (x in description for x in UTILITY_BILLS_LIST):
+    elif any (x in description for x in env.UTILITY_BILLS_LIST):
         return "UTILITY_BILLS"
-    elif any (x in description for x in FOODS_DRINKS_LIST):
+    elif any (x in description for x in env.FOODS_DRINKS_LIST):
         return "FOODS_DRINKS"
-    elif any (x in description for x in ENTERTAINMENT_LIST):
+    elif any (x in description for x in env.ENTERTAINMENT_LIST):
         return "ENTERTAINMENT"
-    elif any (x in description for x in EDUCATION_LIST):
+    elif any (x in description for x in env.EDUCATION_LIST):
         return "EDUCATION"
-    if any(x in description for x in PERSONAL_TYPE_LIST):
+    if any(x in description for x in env.PERSONAL_TYPE_LIST):
         return "PERSONAL"
     else:
         return "OTHER"
@@ -398,47 +373,30 @@ def categorize_amount_range(amount:float) -> str:
     else:
         return "VERY_LARGE"
 
-def is_recurrring_payment(description: str) -> bool:
+def is_recurring_payment(description: str) -> bool:
     description=description.upper()
-    if any (x in description for x in RECURRING_PAYMENTS):
+    if any (x in description for x in env.RECURRING_PAYMENTS_LIST):
         return True
     return False
 
-def get_effective_collection_name() -> str:
-    base = COLLECTION_NAME
-    if (ENV or "").strip().lower() == "dev":
-        return f"{base}_dev"
-    return base
-
-def insert_transactions_to_db(transactions: List[Dict[str, Any]]):
-    client = MongoClient(MONGODB_URI)  # Update with your MongoDB URI
-    db = client[DB_NAME]  # Database name
-    collection = db[get_effective_collection_name()]  # Collection name
-    if transactions:
-        collection.insert_many(transactions)  # Insert all transactions
-    client.close()
-
-def get_bank_name(pdf):
-    text = pdf.pages[0].extract_text()
-    if text:
-        if "AXIS" in text.upper():
-            bank_name = "AXIS BANK"
-        elif "HDFC" in text.upper():
-            bank_name = "HDFC BANK"
-        elif "SBI" in text.upper() or "STATE BANK OF INDIA" in text.upper():
-            bank_name = "STATE BANK OF INDIA"
-        elif "ICICI" in text.upper():
-            bank_name = "ICICI BANK"
-        else:
-            bank_name = "UnknownBank"
-    else:
-        bank_name = "UnknownBank"
+def get_bank_name(_tmpdoc_id: str) -> str:
+    bank_name = "UnknownBank"
+    for bank in env.MY_BANKS_LIST:
+        if bank in _tmpdoc_id.upper():
+            bank_name = bank.title().upper() + " BANK"
     return bank_name
 
-if __name__ == "__main__":
-    # Process all statements when script is run
+def startorchestrator() -> Dict[str, Any]:
     print("PDF Orchestrator initialized")
     result = process_all_statements()
-    #print("\nSample transaction from combined output:")
-    #print(json.dumps(result["transactions"][0], indent=2))
     print("PDF Orchestrator completed processing all statements.")
+    return result
+
+# if __name__ == "__main__":
+#     # Process all statements when script is run
+#     print("PDF Orchestrator initialized")
+#     # get_bank_column_structure()
+#     result = process_all_statements()
+#     #print("\nSample transaction from combined output:")
+#     #print(json.dumps(result["transactions"][0], indent=2))
+#     print("PDF Orchestrator completed processing all statements.")

@@ -1,0 +1,40 @@
+{
+  "AXIS": {
+    "header": {
+      "date": ["Date","Txn Date"],
+      "description":["Transaction Details","Transaction"],
+      "debit": ["debit","Withdrawals","Withdrawal"],
+      "credit": ["credit","Deposits","Deposit"],
+      "balance": ["Balance","Account Balance"]
+    },
+    "optional_headers": {
+      "other_information": ["Other Information"],
+      "cheque_number": ["Cheque No","Chq No."]
+    },
+    "date_formats": ["%d/%m/%Y", "%d-%m-%Y"]
+  },
+  "CANARA": {
+    "header": {
+      "date": ["Date","Txn Date"],
+      "description":["Transaction Details","Transaction","Txn Description"],
+      "debit": ["debit","Withdrawals","Withdrawal"],
+      "credit": ["credit","Deposits","Deposit"],
+      "balance": ["Balance","Account Balance"]
+    },
+    "date_formats": ["%d/%m/%Y", "%d-%m-%Y"]
+  },
+  "KOTAK": {
+    "header": {
+      "date": ["Date","Txn Date"],
+      "description":["Transaction Details","Transaction","Txn Description"],
+      "debit": ["debit","Withdrawals","Withdrawal"],
+      "credit": ["credit","Deposits","Deposit"],
+      "balance": ["Balance","Account Balance"]
+    },
+    "optional_headers": {
+      "other_information": ["Other Information"],
+      "cheque_number": ["Cheque No","Chq No."]
+    },
+    "date_formats": ["%d/%m/%Y", "%d-%m-%Y"]
+  }
+}
