@@ -1,4 +1,4 @@
-> **Note:** `query_expense.py` is a work in progress and its results may not be fully reliable. Use with discretion and verify outputs as needed.
+> **Note:** `src/query_expense.py` is a work in progress and its results may not be fully reliable. Use with discretion and verify outputs as needed.
 
 ---
 
@@ -15,21 +15,55 @@ This project enables you to:
 - Analyze expenses and answer natural language queries using LLMs and pandas.
 
 ---
+## Current Status (Working / WIP) ✅/⚠️
 
+- **main.py** — Working: lightweight entrypoint that runs the orchestrator and other workflows (recommended for standard runs).
+- **src/saveMailAttachment.py** — Working: downloads PDF statements to `attachments/locked/` using Microsoft Graph API (configure `.env`).
+- **src/unlockPDF.py** — Working: unlocks password-protected PDFs and writes to `attachments/unlocked/`.
+- **src/pdfDataOrchestrator.py** — Working: parses unlocked PDFs and inserts transactions into MongoDB. Can optionally write parsed JSON to `processed_transactions/` for debugging and auditing. Use `python main.py` to run in production mode or run the module directly for debugging.
+- **src/query_expense.py** — Work in progress: natural-language → MongoDB translation works but may produce unreliable results for complex queries; use with discretion and verify outputs.
+- **src/** and **ORG/** — Active utility and experimental modules (helpers for parsing, bank-specific logic, and alternative workflows).
+- **financial_rag_db/** — Contains Chroma/embedding DB used for RAG experiments and document retrieval.
+- **test/** — Sample statements for testing; `processed_transactions/` contains exported JSONs.
 
+---
+
+## Directory structure (selected)
+
+```
+.
+├─ README.md
+├─ requirements.txt
+├─ main.py
+├─ src/
+│  ├─ saveMailAttachment.py
+│  ├─ unlockPDF.py
+│  ├─ pdfDataOrchestrator.py
+│  └─ query_expense.py
+├─ processed_transactions/
+├─ attachments/
+│  ├─ locked/
+│  └─ unlocked/
+├─ financial_rag_db/
+├─ ORG/
+├─ reference_images/
+└─ test/
+```
+
+---
 ## Workflow Sequence
 
 1. **Download Bank Statement Attachments**
-   - Use `saveMailAttachment.py` to connect to your email (via Microsoft Graph API) and download PDF bank statements from a configured sender to the `attachments/locked/` directory.
+   - Use `src/saveMailAttachment.py` to connect to your email (via Microsoft Graph API) and download PDF bank statements from a configured sender to the `attachments/locked/` directory.
 
 2. **Unlock Password-Protected PDFs**
-   - Use `unlockPDF.py` to batch-unlock password-protected PDFs in `attachments/locked/` and save the unlocked files to `attachments/unlocked/`. Passwords and directories are managed via `.env`.
+   - Use `src/unlockPDF.py` to batch-unlock password-protected PDFs in `attachments/locked/` and save the unlocked files to `attachments/unlocked/`. Passwords and directories are managed via `.env.
 
 3. **Orchestrate Data Extraction**
-   - Use `pdfDataOrchestrator.py` to parse all unlocked PDF bank statements, extract metadata, categorize transactions, and insert them directly into MongoDB. No intermediate files are written to `processed_transactions/`.
+   - Run `python main.py` (recommended) to execute the orchestrator which calls `src/pdfDataOrchestrator.py`. You can also run `python src/pdfDataOrchestrator.py` directly for debugging. The orchestrator parses unlocked PDFs, extracts metadata, categorizes transactions, and inserts results into MongoDB. By default parsed transactions are inserted into MongoDB; the orchestrator can optionally write parsed JSON files to `processed_transactions/` for debugging or archival purposes.
 
 4. **Query and Analyze Expenses**
-   - Use `query_expense.py` to ask natural language questions about your expenses. The script uses an LLM to translate your query to MongoDB, fetches results, and summarizes with pandas and LLM.
+   - Use `src/query_expense.py` to ask natural language questions about your expenses. The script uses an LLM to translate your query to MongoDB, fetches results, and summarizes with pandas and LLM.
 
 ---
 
@@ -38,10 +72,11 @@ This project enables you to:
 
 | File                        | Purpose                                                                                 |
 |-----------------------------|-----------------------------------------------------------------------------------------|
-| `saveMailAttachment.py`     | Downloads PDF bank statement attachments from your email inbox to `attachments/locked/` using Microsoft Graph API. |
-| `unlockPDF.py`              | Unlocks password-protected PDFs in `attachments/locked/` and saves them to `attachments/unlocked/`. Passwords and directories are set in `.env`. |
-| `pdfDataOrchestrator.py`    | Extracts transactions from unlocked PDF statements and inserts them into MongoDB. |
-| `query_expense.py`          | Translates natural language queries to MongoDB, fetches and analyzes expenses, summarizes with pandas and LLM. |
+| `main.py`                   | Entrypoint that runs the orchestrator and other workflows (recommended for standard runs). |
+| `src/saveMailAttachment.py` | Downloads PDF bank statement attachments from your email inbox to `attachments/locked/` using Microsoft Graph API. |
+| `src/unlockPDF.py`          | Unlocks password-protected PDFs in `attachments/locked/` and saves them to `attachments/unlocked/`. Passwords and directories are set in `.env`. |
+| `src/pdfDataOrchestrator.py`| Extracts transactions from unlocked PDF statements and inserts them into MongoDB. |
+| `src/query_expense.py`      | Translates natural language queries to MongoDB, fetches and analyzes expenses, summarizes with pandas and LLM. |
 | `requirements.txt`          | Python dependencies for the project.                                                    |
 
 ---
@@ -55,19 +90,23 @@ This project enables you to:
 
 
 2. **Prepare your data**
-   - Use `saveMailAttachment.py` to download PDF statements from your email to `attachments/locked/`.
-   - Use `unlockPDF.py` to unlock password-protected PDFs and save them to `attachments/unlocked/`.
+   - Use `src/saveMailAttachment.py` to download PDF statements from your email to `attachments/locked/`.
+   - Use `src/unlockPDF.py` to unlock password-protected PDFs and save them to `attachments/unlocked/`.
    - Create a `.env` file in the project root and fill in the required values (see below).
 
 3. **Run the data orchestrator**
    ```bash
-   python pdfDataOrchestrator.py
+   # Recommended (uses orchestrator wrapper)
+   python main.py
+
+   # Or run directly for debugging
+   python src/pdfDataOrchestrator.py
    ```
    - This will parse unlocked PDFs in `attachments/unlocked/` and insert transactions directly into MongoDB.
 
 4. **Query your expenses**
    ```bash
-   python query_expense.py
+   python src/query_expense.py
    ```
    - Ask questions like "What did I spend on groceries last month?"
    - The script will:
@@ -92,25 +131,29 @@ This project enables you to:
 
 1. **Download attachments from email:**
    ```bash
-   python saveMailAttachment.py
+   python src/saveMailAttachment.py
    ```
    - Downloads PDF statements to `attachments/locked/`.
 
 2. **Unlock password-protected PDFs:**
    ```bash
-   python unlockPDF.py
+   python src/unlockPDF.py
    ```
    - Unlocks PDFs and saves them to `attachments/unlocked/`.
 
 3. **Extract data and insert into MongoDB:**
    ```bash
-   python pdfDataOrchestrator.py
+   # Recommended (uses orchestrator wrapper)
+   python main.py
+
+   # Or run directly for debugging
+   python src/pdfDataOrchestrator.py
    ```
    - Parses unlocked PDFs and inserts transactions into MongoDB.
 
 4. **Analyze expenses:**
    ```bash
-   python query_expense.py
+   python src/query_expense.py
    ```
    - Enter natural language queries, get results from MongoDB, summarized with pandas and LLM.
 
@@ -119,24 +162,24 @@ This project enables you to:
 
 ## Script Highlights
 
-### saveMailAttachment.py
+### src/saveMailAttachment.py
 - Downloads PDF bank statement attachments from your email inbox using Microsoft Graph API.
 - Configurable sender email, client ID, and other secrets via `.env`.
 - Saves all attachments to `attachments/locked/`.
 
-### unlockPDF.py
+### src/unlockPDF.py
 - Unlocks password-protected PDFs in `attachments/locked/` using a list of passwords from `.env`.
 - Saves unlocked PDFs to `attachments/unlocked/`.
 - All directory paths and passwords are managed via `.env`.
 
-### pdfDataOrchestrator.py
+### src/pdfDataOrchestrator.py (run via `main.py`)
 - Reads all unlocked PDF statements from the configured directory.
 - Extracts transaction rows, cleans and parses dates, amounts, and descriptions.
 - Categorizes transactions (grocery, food delivery, rent, etc.) using keyword lists from `.env`.
 - Detects payment method (UPI, NEFT, ATM, etc.) and extracts bank details.
 - Inserts all parsed transactions into MongoDB for persistent storage and querying.
 
-### query_expense.py
+### src/query_expense.py
 - Accepts natural language queries (e.g., "Total grocery spend in April 2025").
 - Uses LLM to translate user queries into valid MongoDB queries.
 - Fetches matching transactions or aggregates from MongoDB.
@@ -144,7 +187,7 @@ This project enables you to:
 
 ---
 
-## query_expense.py - Key Features
+## src/query_expense.py - Key Features
 
 - Accepts natural language queries (e.g., "Total grocery spend in April 2025")
 - Uses LLM to translate user queries into valid MongoDB queries
@@ -160,7 +203,7 @@ This project enables you to:
 
 ## Microsoft Entra Setup for Email Download
 
-To use `saveMailAttachment.py`, you must register a new app in Microsoft Entra:
+To use `src/saveMailAttachment.py`, you must register a new app in Microsoft Entra:
 
 1. Go to [Microsoft Entra](https://entra.microsoft.com/).
 2. Register a new app.  
@@ -170,7 +213,7 @@ To use `saveMailAttachment.py`, you must register a new app in Microsoft Entra:
    - Add `http://localhost` as the redirect URI.
 4. In API permissions, add `Mail.Read` (required) and `User.Read` (optional).  
    ![API Permission Screenshot](reference_images/API_Permission.png)
-5. Use the generated client ID and authority in your `.env` file for `saveMailAttachment.py`.
+5. Use the generated client ID and authority in your `.env` file for `src/saveMailAttachment.py`.
 
 ## Environment Variable: ENV
 
@@ -184,7 +227,7 @@ This helps keep test and production data separate.
 ## .env Example (add to project root)
 
 ```
-# Email and PDF download (used by saveMailAttachment.py)
+# Email and PDF download (used by src/saveMailAttachment.py)
 CLIENT_ID=
 AUTHORITY=
 SCOPES=Mail.Read,User.Read
@@ -192,12 +235,12 @@ SENDER_EMAIL=
 DOWNLOAD_DIR=attachments/locked
 CACHE_FILE=token_cache.bin
 
-# PDF unlock (used by unlockPDF.py)
+# PDF unlock (used by src/unlockPDF.py)
 INPUT_DIR=attachments/locked
 OUTPUT_DIR=attachments/unlocked
 PDF_PASSWORDS=pass1,pass2
 
-# PDF and JSON paths for orchestrator (used by pdfDataOrchestrator.py)
+# PDF and JSON paths for orchestrator (used by src/pdfDataOrchestrator.py)
 INPUT_PDF_DIR=attachments/unlocked
 OUTPUT_JSON_DIR=processed_transactions
 COMBINED_FILE=all_transactions.json

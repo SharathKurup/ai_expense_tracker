@@ -1,5 +1,5 @@
-from src.pdfDataOrchestrator import startorchestrator
+from src import pdfDataOrchestrator as pdfOrch
 
 if __name__ == "__main__":
-    result = startorchestrator()
+    result = pdfOrch.startorchestrator()
     print(result)
